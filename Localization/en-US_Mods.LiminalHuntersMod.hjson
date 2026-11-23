@@ -11,4 +11,118 @@ Items: {
 			It's snowing on Mt.Fuji
 			'''
 	}
+
+	D20: {
+		DisplayName: d20
+		Tooltip: ""
+	}
+
+	PlatinumD1: {
+		DisplayName: d1
+		Tooltip: ""
+	}
+
+	PhantomLance: {
+		DisplayName: Phantom Lance
+		Tooltip:
+			'''
+			Every hit has a 25% chance to summon a Player Clone
+			Right-click to Juxtapose: become invisible for 1 second. Clones converge on you
+			'''
+	}
+
+	MirageHelmet: {
+		DisplayName: Mirage Helmet
+		Tooltip: +2 max clones
+		SetBonus: Grants the Mirage buff
+	}
+
+	MirageBreastplate: {
+		DisplayName: Mirage Breastplate
+		Tooltip:
+			'''
+			+3 mirage damage
+			+1 second clone lifespan
+			'''
+	}
+
+	MirageLeggings: {
+		DisplayName: Mirage Leggings
+		Tooltip:
+			'''
+			+10 blocks dash distance
+			+15 dash damage
+			'''
+	}
+
+	DoppelLance: {
+		DisplayName: Doppel Lance
+		Tooltip: ""
+	}
+
+	PurifiedInnatus: {
+		DisplayName: Purified Innatus
+		Tooltip: ""
+	}
+}
+
+Buffs: {
+	MirageClassBuff: {
+		DisplayName: Mirage
+		Description: You feel like you're all and one. +4 mirage damage
+	}
+
+	MirageDashBuff: {
+		DisplayName: Phantom Dash
+		Description: Q ability ready
+	}
+
+	PhantomDodgeBuff: {
+		DisplayName: Phantom Dodge
+		Description: Dodge the next attack
+	}
+
+	JuxtaposeBuff: {
+		DisplayName: Juxtapose
+		Description: Right-click ability ready
+	}
+
+	InnatusChargedBuff: {
+		DisplayName: Innatus Charged Buff
+		Description: Mods.LiminalHuntersMod.Buffs.InnatusChargedBuff.Description
+	}
+
+	LiminalSicknessBuff: {
+		DisplayName: Liminal Sickness Buff
+		Description: Mods.LiminalHuntersMod.Buffs.LiminalSicknessBuff.Description
+	}
+}
+
+Projectiles: {
+	D20Projectile.DisplayName: D20 Projectile
+	PlatinumD1Projectile.DisplayName: D1 Projectile
+}
+
+DamageClasses: {
+	ChanceDamageClass.DisplayName: chance damage
+	MirageDamageClass.DisplayName: mirage damage
+}
+
+NPCs.PlayerClone.DisplayName: Phantom
+Keybinds.LiminalAbility.DisplayName: Liminal Ability
+
+Configs: {
+	InnatusConfig: {
+		DisplayName: Innatus Config
+
+		BarFillColor: {
+			Label: Bar Fill Color
+			Tooltip: ""
+		}
+
+		FireOverlayColor: {
+			Label: Fire Overlay Color
+			Tooltip: ""
+		}
+	}
 }
