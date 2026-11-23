@@ -62,6 +62,8 @@ namespace LiminalHuntersMod.Content.Items.Weapons
         {
             KylesSaberPlayer kyle = player.GetModPlayer<KylesSaberPlayer>();
 
+            //Aqui va Lost :D
+
             if (player.altFunctionUse == 2) // right click = parry
             {
                 if (kyle.ParryCooldown > 0)
@@ -84,6 +86,8 @@ namespace LiminalHuntersMod.Content.Items.Weapons
 
             return true;
         }
+
+        
 
         public override bool? UseItem(Player player)
         {

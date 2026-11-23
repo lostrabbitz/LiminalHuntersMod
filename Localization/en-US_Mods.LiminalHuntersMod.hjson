@@ -21,6 +21,7 @@ Items: {
 		DisplayName: Kyles Saber
 		Tooltip: ""
 	}
+
 	D20: {
 		DisplayName: d20
 		Tooltip: ""
@@ -110,11 +111,13 @@ Buffs: {
 Projectiles: {
 	D20Projectile.DisplayName: D20 Projectile
 	PlatinumD1Projectile.DisplayName: D1 Projectile
+	KylesSaberParryVfx.DisplayName: Kyles Saber Parry Vfx
 }
 
 DamageClasses: {
 	ChanceDamageClass.DisplayName: chance damage
 	MirageDamageClass.DisplayName: mirage damage
+	CineticDamageClass.DisplayName: Cinetic Damage Class
 }
 
 NPCs.PlayerClone.DisplayName: Phantom
@@ -135,6 +138,3 @@ Configs: {
 		}
 	}
 }
-
-DamageClasses.CineticDamageClass.DisplayName: Cinetic Damage Class
-Projectiles.KylesSaberParryVfx.DisplayName: Kyles Saber Parry Vfx

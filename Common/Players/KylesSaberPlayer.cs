@@ -129,7 +129,7 @@ namespace LiminalHuntersMod.Common.Players
                 return;
 
             ModPacket packet = Mod.GetPacket();
-            packet.Write((byte)KylePacketType.Parry);
+            packet.Write((byte)ModPacketType.KyleParry);
             packet.Write((byte)Player.whoAmI);
             packet.Write(connected);
             packet.Send();
