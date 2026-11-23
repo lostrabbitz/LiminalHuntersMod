@@ -62,11 +62,12 @@ namespace LiminalHuntersMod.Content.Items.Weapons
         {
             KylesSaberPlayer kyle = player.GetModPlayer<KylesSaberPlayer>();
 
-            //Aqui va Lost :D
-
             if (player.altFunctionUse == 2) // right click = parry
             {
                 if (kyle.ParryCooldown > 0)
+                    return false;
+                
+                if(!TrySpendInnatus(player, 10f))
                     return false;
 
                 Item.useTime = ParryStanceTicks;
@@ -87,7 +88,15 @@ namespace LiminalHuntersMod.Content.Items.Weapons
             return true;
         }
 
-        
+        private bool TrySpendInnatus(Player player, float cost)
+        {
+            var innatus = player.GetModPlayer<InnatusPlayer>();
+            if (!innatus.CanUseInnatus)
+                return false;
+
+            innatus.SpendInnatus(cost);
+            return true;
+        }
 
         public override bool? UseItem(Player player)
         {
