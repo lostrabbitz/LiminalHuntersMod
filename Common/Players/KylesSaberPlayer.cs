@@ -1,177 +1,213 @@
-using System;
+using System.Collections.Generic;
+using LiminalHuntersMod.Content.DamageClasses;
+using LiminalHuntersMod.Content.Items.Weapons;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using Terraria;
 using Terraria.Audio;
-using Terraria.DataStructures;
 using Terraria.ID;
 using Terraria.ModLoader;
-using LiminalHuntersMod.Common.GlobalProjectiles;
-using LiminalHuntersMod.Content.Items.Weapons;
-using LiminalHuntersMod.Content.Projectiles;
 
 namespace LiminalHuntersMod.Common.Players
 {
-    /// <summary>
-    /// Tracks the parry cooldown, active parry guard stance, and custom weapon drawing.
-    /// </summary>
+    public class TrailParticle
+    {
+        public Vector2 Position;   // world position of the sprite origin (itemLocation)
+        public float Rotation;
+        public int Direction;
+        public float Age;          // in ticks
+    }
+
     public class KylesSaberPlayer : ModPlayer
     {
-        // Requirement 3: 3 seconds cooldown before parry can be used again (180 ticks at 60 FPS)
-        public int ParryCooldownTimer = 0;
-        public const int MaxParryCooldown = 180;
+        // ---------- Parry tuning ----------
+        public const float ParryRadius = 160f;              // pixels around the player
+        public const int ParryCooldownTicks = 180;          // 3 s
+        public const float EnemyDamageMultiplier = 1.5f;    // enemy damage x1.5 + saber damage
+        public const float ProjectileDamageMultiplier = 1.8f;
+        public const float EnemyKnockback = 8f;
+        public const int ParryIFrames = 20;                 // brief invulnerability after a successful parry
+        public const bool CooldownOnWhiff = true;           // false = no cooldown if nothing was parried
+        public const int ParryEffectTicks = 36;             // 0.6 s total for the 8-frame sheet
+        public const string ParryEffectTexturePath = "LiminalHuntersMod/Assets/Textures/ParryEffect"; // 800x100, 8 frames
+        public const float ParryEffectScale = 2f;
 
-        // Visual parry active duration (time player remains in parry stance)
-        public int ParryStanceDuration = 0;
-        public const int MaxParryStance = 24; // ~0.4s stance hold
+        // Placeholder sound. To use your own: drop a .wav/.ogg in Assets/Sounds and use
+        // new SoundStyle("LiminalHuntersMod/Assets/Sounds/KyleParry")
+        public static readonly SoundStyle ParrySound = SoundID.NPCHit4 with { Volume = 0.9f, Pitch = 0.1f };
 
-        public override void ResetEffects()
+        // ---------- Trail tuning ----------
+        public const int TrailLifetimeTicks = 12;           // 0.2 s: opacity 1 -> 0, then destroyed
+        public const int TrailSubsteps = 3;                 // extra interpolated samples per tick for a smooth trail
+
+        public int ParryCooldown;
+        public int ParryStanceTimer;
+        public int ParryEffectTimer;
+        public bool IsParrying => ParryStanceTimer > 0;
+
+        public readonly List<TrailParticle> TrailParticles = new();
+
+        private bool hasLastSample;
+        private Vector2 lastLocation;
+        private float lastRotation;
+        private int lastDirection;
+
+        // =============== PARRY ===============
+
+        /// <summary>Resolves the parry instantly for everything inside the radius. Local player only.</summary>
+        public void DoParry(Item saber)
         {
-            if (ParryCooldownTimer > 0)
-            {
-                ParryCooldownTimer--;
-                if (ParryCooldownTimer == 0 && Player.whoAmI == Main.myPlayer)
-                {
-                    // Optional: subtle audio/visual cue when parry is ready
-                    SoundEngine.PlaySound(SoundID.MaxMana with { Volume = 0.5f, Pitch = 0.4f }, Player.Center);
-                }
-            }
+            int saberDamage = Player.GetWeaponDamage(saber);
+            Vector2 cursor = Main.MouseWorld; // where the cursor was when the parry fired
+            DamageClass kyleClass = ModContent.GetInstance<CineticDamageClass>();
+            bool connected = false;
 
-            if (ParryStanceDuration > 0)
-            {
-                ParryStanceDuration--;
-            }
-        }
-
-        /// <summary>
-        /// Requirement 3: Executes Parry within the boundary around the player.
-        /// Everything is handled independently:
-        /// - Enemy: takes 1.5 * enemy damage + saber damage (120)
-        /// - Projectile: hostile -> friendly, aimed at cursor, damage * 1.8
-        /// </summary>
-        public void ExecuteParry(float radius, int saberDamage)
-        {
-            // Enter parry stance & set 3 second cooldown
-            ParryCooldownTimer = MaxParryCooldown;
-            ParryStanceDuration = MaxParryStance;
-
-            bool parriedAny = false;
-            Vector2 playerCenter = Player.Center;
-            Vector2 mouseWorld = Main.MouseWorld;
-
-            // 1. Check all Enemies (NPCs) within parry radius
+            // ----- Enemies: each one is handled independently -----
             for (int i = 0; i < Main.maxNPCs; i++)
             {
-                NPC target = Main.npc[i];
-                if (target.active && !target.friendly && !target.dontTakeDamage && target.lifeMax > 5)
+                NPC npc = Main.npc[i];
+                if (!npc.active || npc.friendly || npc.townNPC || npc.dontTakeDamage || npc.immortal || npc.CountsAsACritter)
+                    continue;
+                if (!InParryRange(npc.Hitbox))
+                    continue;
+
+                int damage = (int)(npc.damage * EnemyDamageMultiplier) + saberDamage;
+                int hitDirection = npc.Center.X >= Player.Center.X ? 1 : -1;
+
+                Player.ApplyDamageToNPC(npc, damage, EnemyKnockback, hitDirection, false, kyleClass);
+                connected = true;
+            }
+
+            // ----- Projectiles: each one is handled independently -----
+            for (int i = 0; i < Main.maxProjectiles; i++)
+            {
+                Projectile proj = Main.projectile[i];
+                if (!proj.active || !proj.hostile || proj.friendly || proj.damage <= 0)
+                    continue;
+                if (!InParryRange(proj.Hitbox))
+                    continue;
+
+                float speed = System.Math.Max(proj.velocity.Length(), 12f);
+                Vector2 direction = (cursor - proj.Center).SafeNormalize(new Vector2(Player.direction, 0f));
+
+                proj.velocity = direction * speed;
+                proj.damage = (int)(proj.damage * ProjectileDamageMultiplier);
+                proj.hostile = false;
+                proj.friendly = true;
+                proj.npcProj = false;
+                proj.owner = Player.whoAmI;
+                proj.DamageType = kyleClass;
+                proj.netUpdate = true;
+                connected = true;
+            }
+
+            ParryCooldown = (connected || CooldownOnWhiff) ? ParryCooldownTicks : 0;
+
+            if (connected)
+                Player.SetImmuneTimeForAllTypes(ParryIFrames);
+
+            StartParryVisuals(connected);
+            SendParryPacket(connected);
+        }
+
+        /// <summary>Stance + (if something was parried) effect and sound. Runs on every client.</summary>
+        public void StartParryVisuals(bool connected)
+        {
+            ParryStanceTimer = KylesSaber.ParryStanceTicks;
+
+            if (connected)
+            {
+                ParryEffectTimer = ParryEffectTicks;
+
+                if (!Main.dedServ)
+                    SoundEngine.PlaySound(ParrySound, Player.Center);
+            }
+        }
+
+        private void SendParryPacket(bool connected)
+        {
+            if (Main.netMode != NetmodeID.MultiplayerClient)
+                return;
+
+            ModPacket packet = Mod.GetPacket();
+            packet.Write((byte)KylePacketType.Parry);
+            packet.Write((byte)Player.whoAmI);
+            packet.Write(connected);
+            packet.Send();
+        }
+
+        /// <summary>Circle (player center, ParryRadius) vs. the target's hitbox, so large bosses count correctly.</summary>
+        private bool InParryRange(Rectangle hitbox)
+        {
+            Vector2 closest = Vector2.Clamp(Player.Center, hitbox.TopLeft(), hitbox.BottomRight());
+            return Vector2.DistanceSquared(Player.Center, closest) <= ParryRadius * ParryRadius;
+        }
+
+        // =============== TRAIL ===============
+
+        private void UpdateTrail()
+        {
+            for (int i = TrailParticles.Count - 1; i >= 0; i--)
+            {
+                TrailParticles[i].Age += 1f;
+                if (TrailParticles[i].Age >= TrailLifetimeTicks)
+                    TrailParticles.RemoveAt(i);
+            }
+        }
+
+        private void EmitTrail()
+        {
+            bool swinging = !Player.dead
+                && Player.itemAnimation > 0
+                && ParryStanceTimer <= 0
+                && Player.HeldItem.type == ModContent.ItemType<KylesSaber>();
+
+            if (!swinging)
+            {
+                hasLastSample = false;
+                return;
+            }
+
+            Vector2 location = Player.itemLocation;
+            float rotation = Player.itemRotation;
+            int direction = Player.direction;
+
+            if (hasLastSample && lastDirection == direction)
+            {
+                // Fill the gap between last tick and this tick so fast swings don't leave visible gaps.
+                for (int i = 1; i <= TrailSubsteps; i++)
                 {
-                    float distance = Vector2.Distance(playerCenter, target.Center);
-                    if (distance <= radius + (target.width / 2f))
+                    float t = i / (float)TrailSubsteps;
+                    TrailParticles.Add(new TrailParticle
                     {
-                        // Requirement 3: enemy's damage returned with x1.5 + saber damage (120)
-                        int baseEnemyDmg = target.damage > 0 ? target.damage : 40;
-                        int reflectedDamage = (int)(baseEnemyDmg * 1.5f) + saberDamage;
-
-                        // Calculate knockback away from player
-                        Vector2 knockbackDir = (target.Center - playerCenter).SafeNormalize(Vector2.UnitX);
-                        float knockbackForce = 10f;
-
-                        // Deal damage
-                        Player.ApplyDamageToNPC(
-                            target,
-                            reflectedDamage,
-                            knockbackForce,
-                            target.Center.X > playerCenter.X ? 1 : -1,
-                            crit: true
-                        );
-
-                        // Visual feedback
-                        target.netUpdate = true;
-                        parriedAny = true;
-                    }
+                        Position = Vector2.Lerp(lastLocation, location, t),
+                        Rotation = MathHelper.Lerp(lastRotation, rotation, t),
+                        Direction = direction,
+                        Age = (TrailSubsteps - i) / (float)TrailSubsteps
+                    });
                 }
             }
-
-            // 2. Check all Projectiles within parry radius
-            for (int j = 0; j < Main.maxProjectiles; j++)
+            else
             {
-                Projectile proj = Main.projectile[j];
-                if (proj.active && proj.hostile && !proj.friendly)
-                {
-                    float distance = Vector2.Distance(playerCenter, proj.Center);
-                    if (distance <= radius + (proj.width / 2f))
-                    {
-                        // Requirement 3: becomes player's projectile, sent towards cursor with x1.8 damage
-                        proj.hostile = false;
-                        proj.friendly = true;
-                        proj.owner = Player.whoAmI;
-
-                        // Multiply damage by 1.8
-                        proj.damage = Math.Max(1, (int)(proj.damage * 1.8f));
-
-                        // Aim towards the last location of the player's cursor
-                        float currentSpeed = proj.velocity.Length();
-                        if (currentSpeed < 10f) currentSpeed = 14f; // Ensure responsive bounce speed
-
-                        Vector2 aimDirection = (mouseWorld - proj.Center).SafeNormalize(Vector2.UnitX);
-                        proj.velocity = aimDirection * currentSpeed;
-
-                        // Mark as parried so it pierces or draws a trail
-                        proj.GetGlobalProjectile<ParryGlobalProjectile>().IsParried = true;
-                        proj.netUpdate = true;
-                        parriedAny = true;
-                    }
-                }
+                TrailParticles.Add(new TrailParticle { Position = location, Rotation = rotation, Direction = direction, Age = 0f });
             }
 
-            // Requirement 4: Always spawn Parry effect & sound when parry is triggered!
-            // Total duration: 0.6 seconds (36 ticks), 8 frames of 100x100.
-            SpawnParryVfx(playerCenter);
-
-            // Requirement 4: Custom sound effect. Default fallback SoundID.Item150, easily replaced.
-            PlayParrySound(playerCenter, parriedAny);
+            hasLastSample = true;
+            lastLocation = location;
+            lastRotation = rotation;
+            lastDirection = direction;
         }
 
-        private void SpawnParryVfx(Vector2 position)
+        public override void PostUpdate()
         {
-            if (Main.netMode != NetmodeID.Server)
+            if (!Main.dedServ)
             {
-                // Spawns the 800x100 (8 frames of 100x100) spritesheet effect
-                Projectile.NewProjectile(
-                    Player.GetSource_ItemUse(Player.HeldItem),
-                    position,
-                    Vector2.Zero,
-                    ModContent.ProjectileType<KylesSaberParryVfx>(),
-                    0,
-                    0f,
-                    Player.whoAmI
-                );
+                UpdateTrail();
+                EmitTrail();
             }
-        }
 
-        private void PlayParrySound(Vector2 position, bool success)
-        {
-            // You can replace this path with your own sound in Assets/Sounds/ParrySound.ogg
-            // Example: SoundEngine.PlaySound(new SoundStyle("LiminalHuntersMod/Assets/Sounds/ParrySound"), position);
-            // Default placeholder: high-energy shield clash + crystal chime
-            SoundEngine.PlaySound(SoundID.Item150 with { Pitch = success ? 0.3f : -0.1f, Volume = 1.0f }, position);
-            SoundEngine.PlaySound(SoundID.Item93 with { Pitch = 0.5f, Volume = 0.6f }, position);
-        }
-
-        /// <summary>
-        /// Requirement 5: When parrying, the player holds the saber at a 45 degree angle,
-        /// blade pointing downwards, holding from the handle.
-        /// 69x69 sprite: handle at bottom-left, blade at top-right.
-        /// We configure composite arm angle and draw layer rotation here.
-        /// </summary>
-        public override void ModifyDrawInfo(ref PlayerDrawSet drawInfo)
-        {
-            if (ParryStanceDuration > 0 && Player.HeldItem.type == ModContent.ItemType<KylesSaber>())
-            {
-                // Force arm into parry forward-defensive angle
-                float armAngle = MathHelper.ToRadians(Player.direction == 1 ? 40f : -40f);
-                Player.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Quarter, armAngle);
-            }
+            if (ParryCooldown > 0) ParryCooldown--;
+            if (ParryStanceTimer > 0) ParryStanceTimer--;
+            if (ParryEffectTimer > 0) ParryEffectTimer--;
         }
     }
 }

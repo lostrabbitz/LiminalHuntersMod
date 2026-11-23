@@ -1,145 +1,145 @@
 using System;
+using LiminalHuntersMod.Content.DamageClasses;
+using LiminalHuntersMod.Common.Players;
 using Microsoft.Xna.Framework;
-using Microsoft.Xna.Framework.Graphics;
 using Terraria;
-using Terraria.Audio;
-using Terraria.DataStructures;
 using Terraria.ID;
 using Terraria.ModLoader;
-using LiminalHuntersMod.Common.Players;
-using LiminalHuntersMod.Content.DamageClasses;
-using LiminalHuntersMod.Content.Dusts;
-using LiminalHuntersMod.Content.Projectiles;
 
 namespace LiminalHuntersMod.Content.Items.Weapons
 {
     /// <summary>
-    /// Kyle's Saber:
-    /// - 120 Cinetic Damage
-    /// - 2 swings per second (useTime = 30, useAnimation = 30 at 60 TPS)
-    /// - 69x69 sprite size
-    /// - Blade-only glow trail particle (opacity fades in 0.2s = 12 ticks)
-    /// - Right-click Parry: Reverse-grip 45° downward guard, deflects enemy damage (x1.5 + 120) and projectiles (x1.8 back to cursor).
+    /// Textures expected next to this file:
+    ///   KylesSaber.png       (69x69, handle bottom-left, blade top-right)
+    ///   KylesSaber_Glow.png  (69x69, blade glow only, same layout)
     /// </summary>
     public class KylesSaber : ModItem
     {
-        // 69x69 sprite dimensions
-        public const int SpriteWidth = 69;
-        public const int SpriteHeight = 69;
+        public const string GlowTexturePath = "LiminalHuntersMod/Content/Items/Weapons/KylesSaber_Glow";
 
-        // Parry balance constants
-        public const int SaberBaseDamage = 120;
-        public const float ParryRadius = 135f; // Boundary radius around the player
-        public const int ParryCooldownTicks = 180; // 3 seconds at 60 TPS
+        public const int SwingTicks = 30;        // 60 ticks/s -> 2 swings per second
+        public const int ParryStanceTicks = 36;  // 0.6 s stance (matches the effect length)
 
-        public override void SetStaticDefaults()
-        {
-            // Tooltip handled in localization or SetDefaults
-            Item.ResearchUnlockCount = 1;
-        }
+        // ---------- Parry pose tuning ----------
+        /// <summary>Arm angle above horizontal, towards the facing direction.</summary>
+        public const float ParryArmAngleDeg = 45f;
+        /// <summary>Blade direction relative to facing. 90 = straight down, 45 = down + forward.</summary>
+        public const float ParryBladeAngleDeg = 90f;
+        /// <summary>Shoulder to hand distance in pixels.</summary>
+        public const float ArmLength = 24f;
+        /// <summary>Shoulder position relative to MountedCenter (X is mirrored by facing).</summary>
+        public static readonly Vector2 ShoulderOffset = new Vector2(-2f, -8f);
+        /// <summary>
+        /// The pivot: where the player's hand grips the sprite, measured from the sprite's
+        /// BOTTOM-LEFT corner (+X right, +Y up). The handle lives in the bottom-left of the 69x69 sprite.
+        /// </summary>
+        public static readonly Vector2 GripFromCorner = new Vector2(10f, 10f);
 
         public override void SetDefaults()
         {
-            Item.width = SpriteWidth;
-            Item.height = SpriteHeight;
+            Item.width = 69;
+            Item.height = 69;
+            Item.scale = 1.2f;
 
-            // Requirement 1 & 2: Cinetic Damage & 120 Damage
             Item.DamageType = ModContent.GetInstance<CineticDamageClass>();
-            Item.damage = SaberBaseDamage;
-            Item.knockBack = 5.5f;
-            Item.crit = 8; // 8% base crit
+            Item.damage = 120;
+            Item.knockBack = 5f;
+            Item.crit = 0;
 
-            // Requirement 2: Fast enough to swing twice in 1 second.
-            // Terraria runs at 60 updates per second. 60 / 2 = 30 ticks per full swing.
-            Item.useTime = 30;
-            Item.useAnimation = 30;
             Item.useStyle = ItemUseStyleID.Swing;
-
+            Item.useTime = SwingTicks;
+            Item.useAnimation = SwingTicks;
             Item.autoReuse = true;
-            Item.UseSound = SoundID.Item15; // Energy swing hum
-            Item.rare = ItemRarityID.Lime;
-            Item.value = Item.sellPrice(gold: 15);
-            Item.scale = 1.15f;
+            Item.UseSound = SoundID.Item15;
+
+            Item.rare = ItemRarityID.Cyan;
+            Item.value = Item.sellPrice(gold: 5);
         }
 
-        // Requirement 3: Allow Right-Click for Parry
-        public override bool AltFunctionUse(Player player)
-        {
-            return true;
-        }
+        public override bool AltFunctionUse(Player player) => true;
 
         public override bool CanUseItem(Player player)
         {
-            var modPlayer = player.GetModPlayer<KylesSaberPlayer>();
+            KylesSaberPlayer kyle = player.GetModPlayer<KylesSaberPlayer>();
 
-            // If right-clicking (Parry attempt)
-            if (player.altFunctionUse == 2)
+            if (player.altFunctionUse == 2) // right click = parry
             {
-                // Can only parry if cooldown is ready
-                if (modPlayer.ParryCooldownTimer > 0)
-                {
+                if (kyle.ParryCooldown > 0)
                     return false;
-                }
 
-                // Setup parry state
-                Item.useStyle = ItemUseStyleID.HoldUp; // Custom drawn in PlayerDrawLayer
-                Item.useTime = 20;
-                Item.useAnimation = 20;
-                Item.noMelee = true; // Parry doesn't trigger standard swing hitboxes
-                Item.UseSound = null; // Parry plays its own clash sound on trigger
+                Item.useTime = ParryStanceTicks;
+                Item.useAnimation = ParryStanceTicks;
+                Item.noMelee = true;
+                Item.autoReuse = false;
+                Item.UseSound = null; // parry sound is played by KylesSaberPlayer
             }
-            else
+            else // left click = normal swing
             {
-                // Normal primary swing
-                Item.useStyle = ItemUseStyleID.Swing;
-                Item.useTime = 30; // 2 swings per second
-                Item.useAnimation = 30;
+                Item.useTime = SwingTicks;
+                Item.useAnimation = SwingTicks;
                 Item.noMelee = false;
+                Item.autoReuse = true;
                 Item.UseSound = SoundID.Item15;
             }
 
-            return base.CanUseItem(player);
+            return true;
         }
 
         public override bool? UseItem(Player player)
         {
-            if (player.altFunctionUse == 2)
-            {
-                var modPlayer = player.GetModPlayer<KylesSaberPlayer>();
-                // Activate the parry guard and scan for enemies/projectiles
-                modPlayer.ExecuteParry(ParryRadius, SaberBaseDamage);
-                return true;
-            }
+            // Resolve the parry once, only on the owning client.
+            if (player.altFunctionUse == 2 && player.whoAmI == Main.myPlayer)
+                player.GetModPlayer<KylesSaberPlayer>().DoParry(Item);
 
-            return base.UseItem(player);
+            return true;
+        }
+
+        // Runs after vanilla applies the swing, so we only override it while parrying.
+        // When the stance ends this stops running and the normal swing pivot is back automatically.
+        public override void UseStyle(Player player, Rectangle heldItemFrame)
+        {
+            if (!player.GetModPlayer<KylesSaberPlayer>().IsParrying)
+                return;
+
+            GetParryPose(player, out _, out float itemRotation, out Vector2 itemLocation);
+            player.itemRotation = itemRotation;
+            player.itemLocation = itemLocation;
+        }
+
+        public override void UseItemFrame(Player player)
+        {
+            if (!player.GetModPlayer<KylesSaberPlayer>().IsParrying)
+                return;
+
+            GetParryPose(player, out float armRotation, out _, out _);
+            player.SetCompositeArmFront(true, Player.CompositeArmStretchAmount.Full, armRotation);
         }
 
         /// <summary>
-        /// Requirement 2: Trail behind ONLY the blade, NOT the handle.
-        /// Spawns a custom particle / afterimage dust using KylesSaber_Glow.png (69x69 mask)
-        /// which fades from 100% to 0% opacity in 0.2 seconds (12 game ticks).
+        /// Computes the parry pose. Vanilla draws a held sword rotated around the sprite's bottom-left
+        /// corner (bottom-right when facing left). Since we want the HANDLE in the hand, we place that
+        /// corner at (hand - rotated grip offset), which moves the effective pivot onto the handle.
         /// </summary>
-        public override void MeleeEffects(Player player, Rectangle hitbox)
+        public static void GetParryPose(Player player, out float armRotation, out float itemRotation, out Vector2 itemLocation)
         {
-            if (Main.netMode == NetmodeID.Server)
-                return;
+            int dir = player.direction;
 
-            // Calculate current weapon swing angle & tip position
-            float itemRotation = player.itemRotation;
-            Vector2 handPosition = player.GetFrontHandPosition(player.compositeFrontArm.stretch, itemRotation);
+            // Arm: 45 degrees up and forward.
+            float armAngle = MathHelper.ToRadians(ParryArmAngleDeg);
+            Vector2 armDir = new Vector2(dir * (float)Math.Cos(armAngle), -(float)Math.Sin(armAngle));
+            armRotation = armDir.ToRotation() - MathHelper.PiOver2; // composite arm: 0 = pointing down
 
-            // Spawn blade-only glow particle
-            // The particle stays at current position & angle and fades out over 0.2s (12 frames)
-            KylesSaberBladeGlowTrail.SpawnBladeGlow(
-                position: handPosition,
-                rotation: itemRotation,
-                direction: player.direction,
-                scale: Item.scale,
-                lightColor: new Color(40, 230, 255) // Cyan lightsaber glow
-            );
+            Vector2 shoulder = player.MountedCenter + new Vector2(ShoulderOffset.X * dir, ShoulderOffset.Y + player.gfxOffY);
+            Vector2 hand = shoulder + armDir * ArmLength;
 
-            // Add ambient light along the blade
-            Lighting.AddLight(hitbox.Center.ToVector2(), 0.3f, 0.8f, 1.0f);
+            // Sprite blade points up-right at rotation 0 (-45 deg). Mirrored when facing left (-135 deg).
+            float blade = MathHelper.ToRadians(ParryBladeAngleDeg);
+            float bladeWorldAngle = dir == 1 ? blade : MathHelper.Pi - blade;
+            itemRotation = bladeWorldAngle + (dir == 1 ? MathHelper.PiOver4 : MathHelper.PiOver4 * 3f);
+
+            // Grip point relative to the draw origin, then rotated.
+            Vector2 gripLocal = new Vector2(dir * GripFromCorner.X, -GripFromCorner.Y);
+            itemLocation = hand - gripLocal.RotatedBy(itemRotation);
         }
     }
 }
